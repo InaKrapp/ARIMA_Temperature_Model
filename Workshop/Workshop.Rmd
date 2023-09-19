@@ -1,0 +1,581 @@
+---
+title: "Global Temperature File"
+author: "Ina"
+date: "28 11 2021"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Zuerst müssen die Daten in R: 
+
+```{r}
+Temp <- read.table("Global Temperature.txt")
+```
+Entnommen sind sie von hier: https://climate.nasa.gov/vital-signs/global-temperature/
+
+Als nächstes besorgen wir einige Befehle, die für die Zeitreihenanalyse hilfreich sind: 
+
+```{r}
+library(fpp3)
+```
+Zunächst brauchen wir die Daten als "tsibble", das ist ein Objekt, von dem das System "weiß", welcher Teil der Daten die Zeitangabe ist. Hier ist es die erste Spalte, also V1, die das Jahr angibt. Daher wird sie als index im Befehl genannt. So speichert R den Hinweis, dass V1 die Zeit angibt. 
+```{r}
+Temptsibble <- as_tsibble(Temp, index = V1)
+```
+Wir wollen, damit der Datensatz intuitiv verständlich wird, ihn uns erst mal etwas genauer ansehen: 
+
+```{r}
+colnames(Temptsibble) <- c("Year", "Temperature", "Smoothed_Temperature") 
+head(Temptsibble)
+```
+
+
+Als nächstes erstellen wir einen Graph der Daten: 
+```{r}
+Temptsibble%>%autoplot()
+
+```
+Hier erhalten wir eine Warnung: Plot variable not specified, automatically selected `.vars = Temperature`
+Das heißt, normalerweise sollte man spezifizieren, was auf der Y-Achse abgebildet wird (auf der X-Achse ist es bei dem Befehl `autoplot`, der mit Tsibbles arbeitet, automatisch die Zeit).
+
+Mit der Spezifikation kann man sich unterschiedliche Spalten aus der Tabellen abbilden lassen. 
+```{r}
+Temptsibble%>%autoplot(.vars =Temperature)
+Temptsibble%>%autoplot(.vars = Smoothed_Temperature)
+```
+Den können wir auch noch hübscher machen. Es lassen sich Legenden hinzufügen, die Schriftart verändern, die Farbe des Graphen, die Farbe des Hintergrundes...sehr, sehr viele Sachen. 
+
+Aber versuchen wir erst einmal eine Prognose: 
+
+```{r}
+
+fit <- Temptsibble %>%
+  model(ARIMA(Temperature))
+
+```
+
+Was genau haben wir dort gemacht? 
+Erst haben wir einen "fit" erstellt. Damit ist gemeint, dass ein Modell möglichst nah an die Daten angepasst wird.
+Dieses Modell ist als "fit" gespeichert, und wir können es uns genauer ansehen. 
+Dazu benutzen wir den Befehl "report".
+
+```{r}
+report(fit)
+```
+Diese Angaben sagen uns viel über das Modell aus. 
+w/ drift bedeutet, dass die Temperatur keinen konstanten Mittelwert besitzt, sondern im Laufe der Zeit eine konstante Steigung in den Daten erkennbar ist, die deswegen auch im `fit` modelliert wird.
+ar1 ist der Koeffizient, über den Werte aus der Vergangenheit in die Berechnung eingehen. 
+Es wird in diesem Modell beispielsweise die Temperatur von 2020 anhand der Temperatur aus dem Jahr 2019 vorausgesagt.
+Die ma-Koeffizienten sagen etwas darüber aus, wie lange zufällige Abweichungen in der Temperatur eines Jahres die Werte der folgenden Jahre beeinflussen. In diesem Fall ist ihr Einfluss in den folgenden drei Jahren signifikant.
+Das Modell ist nicht perfekt, und Maße wie s.e. (standard error), sigma^2 und AIC sagen etwas darüber aus, wie genau das Modell auf die Daten passt. 
+
+Nun die erste Prognose: Wir geben an, wie weit sie in die Zukunft gehen soll (hier: h= 10, also 10 Jahre), anschließend erstellt R sie automatisch.
+Durch `autoplot` bilden wir die bisherigen Werte (gespeichert in Temptsibble) und die Prognose (gespeichert in `Forecast`) ab.
+```{r}
+Forecast <- fit %>% forecast(h=10) 
+autoplot(Forecast, Temptsibble)
+```
+Dieser Forcast liest sich folgendermaßen: 
+Die schwarze Linie ist der bisherige Temperaturverlauf, die blaue Linie der wahrscheinlichste zukünftige Verlauf.
+Aber es ist nicht unwahrscheinlich, dass sich die Temperatur nicht genau der Linie folgt. 
+Die blauen Bereiche darum sind Konfidenzintervalle:
+Mit 80%-er Wahrscheinlichkeit bleibt sie aber innerhalb des etwas stärker gefärbten Bereiches um die Linie. 
+Mit 95%-er Wahrscheinlichkeit bleibt sie innerhalb des stärker oder schwächer gefärbten Bereiches.
+
+
+In der ersten Prognose mit dem ARIMA-Modell sieht man schon eine steigende Tendenz. 
+Aber sie ist nicht so stark wie der Anstieg der Temperaturen seit 1970.Warum könnte das so sein? 
+
+Das liegt zum Teil an Eigenschaften der Modelle. Aber auch daran, dass die Daten keine Information über die Ursache der Temperaturänderung ab 1970 enthalten. Wir können uns denken, dass es der Klimawandel ist, der dazu führt, dass der Anstieg seit 1970 deutlich andere Werte gibt als das insgesamt eher zufällig schwankende Klima von 1880 bis 1960. Aber das Modell kann eine solche Unterscheidung in Vor-Klimawandel-Periode und Klimawandel-Periode noch nicht vornehmen. Es könnte zwar Zyklen erkennen (beispielsweise bei monatlichen Daten Schwankungen mit der Jahreszeit), aber keine Brüche im Trend. 
+
+Um eine genauere Vorhersage zu erhalten, muss das Modell mehr Daten verwenden, die Information dazu enthalten, warum die Temperatur ab 1970 gestiegen ist. 
+
+Darum soll es gleich noch gehen. 
+Erst einmal sind hier noch ein paar Möglichkeiten, einen Graph zu modifizieren. Verändert werden die Dicke der Linien (Befehl: size= 1.1) und ihre Farben (Befehl: colour = "#E96F00" ).
+Außerdem wird ein Titel hinzugefügt (Befehl: labs( title = "Forecast World Temperature")) und ein paar Hintergrundfarben werden geändert. 
+
+```{r}
+graph_forecast <-  autoplot(Forecast, Temptsibble, show_gap = FALSE, size=1.1, colour="#E69F00") +geom_line(aes (x=Year, y= Temperature), linewidth=1.1, colour="#E69F00")+
+   labs(title="Forecast World Temperature" ) +
+   theme(panel.background = element_rect(fill = "#FFFFFF", colour = "black"), 
+        plot.background = element_rect(fill="white", colour="white"), 
+  panel.grid.major = element_line(linewidth = 0.5, linetype = 'solid', colour = "black"), 
+  panel.grid.minor = element_line(linewidth = 0.25, linetype = 'solid', colour = "grey"))
+graph_forecast
+
+```
+ 
+In einer png-Datei speichern lässt sich der Graph mit diesen Befehlen:
+```{r}
+png(filename="Forecast World Temperature.png", 
+    type="cairo",
+    units="in", 
+    width=5, 
+    height=4, 
+    pointsize=12, 
+    res=1080)
+graph_forecast
+dev.off()
+
+```
+
+Was bietet sich an, um als Datensatz mehr Informationen zu geben, anhand von denen die zukünftige Temperatur prognostiziert werden kann? 
+
+Der CO2-Gehalt zum Beispiel. Wir sind uns alle der Tatsache bewusst, dass der zunehmende CO2-Gehalt in der Erdatmosphäre wesentlich für die im obigen Graphen sichtbare Erwärmung seit 1960 verantwortlich ist. 
+Der Computer 'weiß' das nicht. Aber er ist in der Lage, den CO2-Gehalt in eine Voraussage mit einzubeziehen. 
+
+```{r}
+Merged_data <- read.csv2("merged_yearly.csv")
+Merged_data$X.year.CE.<- as.integer(Merged_data$X.year.CE.)
+colnames(Merged_data) <- c("Year", "CO2")
+
+```
+Wieder brauchen wir ein Tsibble: 
+
+```{r}
+#CO2tsibble <- as_tsibble(Merged_data, index = Year)
+```
+
+Dieser Teil gibt eine Fehlermeldung. Aber auch gleich den Hinweis, woran sie liegen könnte: 
+Error: A valid tsibble must have distinct rows identified by key and index.
+i Please use `duplicates()` to check the duplicated rows.
+Mit anderen Worten: Das System verarbeitet nur Datensätze, in denen jeder Wert des Index, hier also die Jahreszahl, nur einmal vorkommt. Durch das Runden kann es aber passieren, dass eine Jahreszahl zweimal vorkommt. 
+Ein Befehl, um herauszufinden, wo das passiert ist, ist "duplicates": 
+```{r}
+duplicates(Merged_data, index = Year)
+```
+Das sind einige Fälle. Manuell weisen wir sie einem Jahr später oder früher zu. 
+```{r}
+Merged_data[63,1] <- 1847
+Merged_data[74,1] <- 1885
+Merged_data[80,1] <- 1898
+Merged_data[82,1] <- 1900
+Merged_data[83,1]<-1903
+
+Merged_data[87,1] <- 1913
+Merged_data[92,1] <- 1924
+
+Merged_data[121,1] <- 1956
+
+#Remove the remaining duplicates:
+data <- Merged_data[!duplicated(Merged_data$Year),]
+
+#Cut data: The temperature data only starts at 1880. 
+CO2data <- data[73:176,]
+
+
+```
+
+Als nächstes müssen die Jahre ergänzt werden, die in diesem Datensatz fehlen. 
+
+```{r}
+y <- expand.grid(Year = 1880:2020)
+
+x <- merge(CO2data, y, all = TRUE)
+
+
+#Wir brauchen die Daten für das CO2 als numerische Werte: 
+  x$CO2 <- as.numeric(x$CO2)
+
+```
+
+Die Lücken werden durch ein ARIMA-Modell gefüllt, nachdem die Daten zu einem Tsibble umgewandelt werden:
+```{r}
+CO2tsibble <- as_tsibble(x, index = Year)
+
+CO2tsibblefull <-  CO2tsibble %>%
+  # Fit ARIMA model to the data containing missing values
+  model(ARIMA(CO2)) %>%
+  # Estimate the CO2 values for all periods
+  interpolate(CO2tsibble)
+#Brauche ich das überhaupt? 
+```
+Wieder passen wir ein ARIMA-Modell an: 
+```{r}
+fitCo2 <- CO2tsibble %>%
+  model(ARIMA(CO2))
+report(fitCo2)
+
+CO2tsibble%>%autoplot(.vars = CO2)
+CO2tsibblefull%>%autoplot(.vars = CO2)
+
+```
+
+Oh, da ist etwas schief gegangen. 
+Das ARIMA-Modell ist für bestimmte Strukturen gedacht, daher kann es passieren, dass es uns unsinnige Werte vorschlägt. 
+
+Versuchen wir eine Variation: 
+Nehmen wir Werte früherer Jahre für die Vorhersage mit hinein. Der erste Graph zeigt hier den neu modellierten Datensatz von 1874 bis 2020. Der zweite ist fast identisch, nur fängt er erst 1880 an.
+```{r}
+CO2data2 <- data[72:176,]
+
+a <- expand.grid(Year = 1874:2020)
+
+b <- merge(CO2data2, a, all = TRUE)
+
+#Wir brauchen die Daten für das CO2 als numerische Werte: 
+  b$CO2 <- as.numeric(b$CO2)
+
+
+
+CO2tsibble2 <- as_tsibble(b, index = Year)
+
+CO2tsibblefull2 <-  CO2tsibble2 %>%
+  # Fit ARIMA model to the data containing missing values
+  model(ARIMA(CO2)) %>%
+  # Estimate the CO2 values for all periods
+  interpolate(CO2tsibble2)
+
+
+fitCo22 <- CO2tsibble2 %>%
+  model(ARIMA(CO2))
+report(fitCo22)
+
+
+CO2tsibblefull2%>%autoplot(.vars = CO2)
+
+Co2tsibble_1880 <- CO2tsibblefull2[7:147,]
+Co2tsibble_1880%>%autoplot(.vars = CO2)
+```
+
+
+Das sieht schon etwas besser aus. 
+Aber es gibt eben diese Datenlücke von 10 Jahren und danach einen Fall des Wertes von 1884 bis 1885. Und da der Rechner nicht kausal überprüft, ob eine solche Schwankung bedeutungsvoll ist, sondern ihr Bedeutung beimessen muss - ansonsten hat er ja keine Daten aus der Zeit - versucht er, den Grafen so zu zeichnen, dass er auch bei solchen Werten immer genau den Daten folgt. 
+Wir lernen daraus: Je weniger Daten es gibt, desto problematischer werden Ausreißer. 
+Aber ist dieser Modellfehler (auch wenn er zweifelsohne gravierend aussieht) überhaupt wirklich so wichtig für die Analyse? 
+
+Sehen wir uns den Zusammenhang zwischen CO2 und Temperatur einmal genauer an. Wenig überraschend für Leute, die mit den Grundzusammenhängen des Klimawandels vertraut sind, steigen beide Werte ab dem mittleren zwanzigsten Jahrhundert an. 
+
+Die Korrelation ist ein Maß dafür, wie stark in einem Datensatz die Änderung eines Wertes mit der Änderung eines zweiten Wertes einhergeht. Wir können die Korrelation zwischen dem CO2-Gehalt und der Temperatur berechnen: 
+
+```{r}
+
+cor.test(Co2tsibble_1880$CO2, Temptsibble$Temperature)
+```
+Da der p-Wert sehr klein ist (kleiner als 2.2e-16), ist der Zusammenhang zwischen dem Anstieg des CO2-Gehaltes und der Temperatur höchstwahrscheinlich kein Zufall. 
+Er liegt bei etwa 0.95, mit 95%-Wahrscheinlichkeit zwischen 0.9322119 und 0.9646374. 
+Das heißt: Etwa 95% der globalen Temperaturänderung kann anhand des CO2-Gehaltes prognostiziert werden.
+Graphisch darstellen kann man den Zusammenhang auch: 
+
+Kombinieren wir die Datensätze des CO2-Gehaltes und der Temperatur, dann können wir leicht beide in einer Graphik abbilden. 
+Dabei muss auf die Achsen geachtet werden: Jetzt ist hier nicht die Zeit die X-Achse, sondern der CO2-Gehalt. 
+```{r}
+Co2_climate_1 <- bind_cols(CO2tsibble, Temptsibble$Temperature)
+colnames(Co2_climate_1) <- c("Year", "CO2", "Temperature")
+ggplot(Co2_climate_1, aes(x = CO2, y = Temperature)) +
+    geom_point()
+```
+Dann können wir eine lineare Regression durchführen.
+Eine lineare Regression modelliert Zusammenhänge, indem sie versucht, eine Gerade möglichst genau durch die Datenpunkte zu legen. 
+```{r}
+my_graph <- ggplot(Co2_climate_1, aes(x = CO2, y = Temperature)) +
+    geom_point() +
+    stat_smooth(method = "lm",
+        col = "#C42126",
+        se=FALSE,
+        linewidth = 1)
+my_graph
+```
+Eine andere Möglichkeit, den Zusammenhang darzustellen, ist ein sogenannter "Bubblechart". 
+
+```{r}
+ ggplot(Co2_climate_1, aes(Year, Temperature)) + geom_point(aes(size = CO2), shape = 21)
+```
+
+Aus diesen Graphen wird es ziemlich offensichtlich, dass im Laufe der Zeit der CO2-Gehalt in der Atmosphäre und die Temperatur parallel zugenommen haben. 
+Eine Prognose zu erstellen, die anhand des zukünftigen CO2-Gehaltes die Temperatur vorhersagen kann, ist schon schwieriger. Wir brauchen erst eine Prognose für die Entwicklung des CO2-Gehaltes. 
+
+Dazu verwenden wir wieder ein ARIMA-Modell: 
+Wir gehen zunächst davon aus, dass sich der zukünftige CO2-Gehalt aus der vergangenen Entwicklung vorhersagen lässt.
+```{r}
+fit_Co2_for_prognosis <- CO2tsibblefull2 %>%
+  model(ARIMA(CO2))
+
+report(fit_Co2_for_prognosis)
+
+Forecast_Co2_for_prognosis <- fit_Co2_for_prognosis %>% forecast(h=10) 
+autoplot(Forecast_Co2_for_prognosis,CO2tsibblefull2)
+
+
+```
+Das Konfidenzintervall dieser Vorhersage ist zwar relativ groß, aber eine Rückkehr des CO2-Gehalts zu vorindustriellen Werten scheint unwahrscheinlich.
+
+Jetzt können wir versuchen, anhand der CO2-Prognose die Temperatur vorherzusagen: 
+
+```{r}
+#Kombinieren wir Temperature und Co2-Gehalt:
+
+Fulltsibble <- bind_cols(Temptsibble, Co2tsibble_1880$CO2)
+colnames(Fulltsibble) <- c("Year", "Temperature", "Smoothed_Temperature", "CO2")
+
+#Wir nehmen den Mittelwert des erstellten ARIMA-Modelles als Vorhersage für den zukünftigen CO2-Gehalt
+Future <- as.data.frame( cbind(Forecast_Co2_for_prognosis$Year, Forecast_Co2_for_prognosis$.mean))
+colnames(Future) <- c("Year", "CO2")
+Future = as_tsibble(Future, index= Year)
+
+#Hier wird der fit erstellt, also das Modell:
+fit_temperature_CO2 <-Fulltsibble %>%
+  model(ARIMA(Temperature ~ CO2))
+report(fit_temperature_CO2)
+
+#Hier wird der Forecast erstellt und angezeigt.
+forecast(fit_temperature_CO2, new_data = Future) %>%autoplot(Fulltsibble)
+
+Forecast_with_CO2 = forecast(fit_temperature_CO2,Fulltsibble, new_data = Future )
+```
+
+Dasselbe können wir machen, ohne die Daten zu modellieren. Wir lassen die Lücken einfach da - ein ARIMA-Modell kann mit Lücken arbeiten. 
+```{r}
+#Kombinieren wir wieder Temperature und Co2-Gehalt:
+
+Fulltsibble_2 <- bind_cols(Temptsibble, CO2tsibble$CO2)
+colnames(Fulltsibble_2) <- c("Year", "Temperature", "Smoothed_Temperature", "CO2")
+
+fit_Co2_for_prognosis_2 <- CO2tsibble %>%
+  model(ARIMA(CO2))
+
+report(fit_Co2_for_prognosis_2)
+
+Forecast_Co2_for_prognosis_2 <- fit_Co2_for_prognosis_2 %>% forecast(h=10) 
+autoplot(Forecast_Co2_for_prognosis_2,CO2tsibble)
+
+```
+Man sieht, dass das Konfidenzintervall, der Bereich, in dem sich die zukünftigen Werte mit 95%-er Wahrscheinlichkeit bewegen werden, sehr klein ist. Weil es aus den frühen Jahren so wenig Daten gibt, orientiert sich die Prognose primär an den späteren, die einen sehr eindeutigen Trend mit sehr wenig Variation zeigen. 
+
+Auch diesen Graph können wir einfärben und speichern: 
+```{r}
+graph_CO2 <-  autoplot(Forecast_Co2_for_prognosis_2, Fulltsibble_2, show_gap = FALSE, size=0.5, colour="#56B4E9") +geom_line(aes (x=Year, y= CO2), size=0.5, colour="#56B4E9")+
+   labs(title="Forecast World CO2 levels", y="CO2" ) +
+   theme(panel.background = element_rect(fill = "#FFFFFF", colour = "black"), 
+        plot.background = element_rect(fill="white", colour="white"), 
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "black"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid', colour = "grey"))
+
+png(filename="Forecast World CO2 levels.png", 
+    type="cairo",
+    units="in", 
+    width=5, 
+    height=4, 
+    pointsize=12, 
+    res=1080)
+graph_CO2
+dev.off()
+```
+
+Die Temperaturvorhersage wird dann: 
+
+```{r}
+
+
+#Wir nehmen den Mittelwert des erstellten ARIMA-Modelles als Vorhersage für den zukünftigen CO2-Gehalt
+Future_2 <- as.data.frame( cbind(Forecast_Co2_for_prognosis_2$Year, Forecast_Co2_for_prognosis_2$.mean))
+colnames(Future_2) <- c("Year", "CO2")
+Future_2 = as_tsibble(Future_2, index= Year)
+
+#Hier wird der fit erstellt, also das Modell:
+fit_temperature_CO2_2 <-Fulltsibble_2 %>%
+  model(ARIMA(Temperature ~ CO2))
+report(fit_temperature_CO2_2)
+
+#Hier wird der Forecast erstellt und angezeigt.
+forecast(fit_temperature_CO2_2, new_data = Future_2) %>%autoplot(Fulltsibble_2)
+
+Forecast_with_CO2_2= forecast(fit_temperature_CO2_2,Fulltsibble_2, new_data = Future_2 )
+```
+
+Für die Prognose des CO2-Gehaltes ist es hier eher fragwürdig, vergangene Werte modellieren zu wollen. Denn diese Modellwerte vergrößern die Unsicherheit in der Prognose, bieten aber keinen erkennbaren Vorteil. 
+Für die darauf aufbauende Prognose der Temperatur in Abhängigkeit des CO2-Gehaltes ist der Unterschied zwischen dem vollständigen modellierten und dem lückenhaften Datensatz aber gar nicht so groß. 
+```{r}
+# Mit 'Lückenfüllung' bei der CO2-Prognose
+Forecast_with_CO2%>%autoplot(Fulltsibble)
+# Ohne 'Lückenfüllung' bei der CO2-Prognose
+Forecast_with_CO2_2%>%autoplot(Fulltsibble_2)
+```
+
+
+Wir arbeiten mit der Prognose auf Basis des lückenhaften CO2-Datensatzes weiter. 
+
+Diese Prognose sieht der vorherigen zur Temperatur sehr ähnlich. Wir können sie genauso einfärben und speichern:
+```{r}
+graph_forecast_CO2 <-  autoplot(Forecast_with_CO2_2, Fulltsibble_2, show_gap = FALSE, size=1.1, colour="#E69F00") +geom_line(aes (x=Year, y= Temperature), size=1.1, colour="#E69F00")+
+   labs(title="Forecast World Temperature with rising CO2 levels", y="Temperature" ) +
+   theme(panel.background = element_rect(fill = "#FFFFFF", colour = "black"), 
+        plot.background = element_rect(fill="white", colour="white"), 
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "black"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid', colour = "grey"))
+
+png(filename="Forecast World Temperature with rising CO2 levels.png", 
+    type="cairo",
+    units="in", 
+    width=5, 
+    height=4, 
+    pointsize=12, 
+    res=1080)
+graph_forecast_CO2
+dev.off()
+```
+
+
+Beide können wir uns anzeigen lassen und so vergleichen: 
+```{r}
+graph_forecast
+graph_forecast_CO2
+```
+Zwei Unterschiede sind sichtbar: Erstens ist der prognostizierte Anstieg stärker, wenn das CO2-Level mit einbezogen wird. Zweitens sind die Konfidenzintervalle kleiner. 
+ 
+Anders als beim ersten Modell, in dem die Temperatur mit 95%-er Wahrscheinlichkeit steigen kann oder gleich bleibt, steigt sie beim zweiten Modell mit mindestens 95%-er Wahrscheinlichkeit deutlich, selbst im Rahmen zufällig zu erwartender Abweichungen.
+Diese Angabe ist allerdings eine bedingte Prognose. Sie sagt aus: Sollte der Co2-Gehalt so steigen, wie in den Daten vorausgesagt, wird die Temperatur mit 95%-er Wahrscheinlichkeit innerhalb des Konfidenzintervalls bleiben, also entsprechend ansteigen.
+
+Wir können eine zweite bedingte Prognose erstellen, die mit der Annahme arbeitet, dass der CO2-Gehalt ab sofort gleich bleibt. 
+
+```{r}
+Future3 <- as.data.frame( cbind(Forecast_Co2_for_prognosis_2$Year, rep(415, times=10 )))
+colnames(Future3) <- c("Year", "CO2")
+Future3 = as_tsibble(Future3, index= Year)
+
+fit_temperature_CO2_3 <-Fulltsibble_2 %>%
+  model(ARIMA(Temperature ~ CO2))
+report(fit_temperature_CO2_3)
+
+#Hier wird der Forecast erstellt und angezeigt.
+forecast(fit_temperature_CO2_3, new_data = Future3) %>%autoplot(Fulltsibble_2)
+
+Forecast_constant_CO2 = forecast(fit_temperature_CO2_3,Fulltsibble_2, new_data = Future3 )
+```
+Auch diese Prognose können wir speichern: 
+```{r}
+graph_forecast_CO2_2 <-  autoplot(Forecast_constant_CO2, Fulltsibble, show_gap = FALSE, size=1.1, colour="#E69F00") +geom_line(aes (x=Year, y= Temperature), size=1.1, colour="#E69F00")+
+   labs(title="Forecast World Temperature with constant CO2 levels", y="Temperature" ) +
+   theme(panel.background = element_rect(fill = "#FFFFFF", colour = "black"), 
+        plot.background = element_rect(fill="white", colour="white"), 
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "black"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid', colour = "grey"))
+
+png(filename="Forecast World Temperature with constant CO2 levels.png", 
+    type="cairo",
+    units="in", 
+    width=5, 
+    height=4, 
+    pointsize=12, 
+    res=1080)
+graph_forecast_CO2_2
+dev.off()
+```
+
+Und mit den bisherigen vergleichen:
+```{r}
+graph_forecast
+graph_forecast_CO2
+graph_forecast_CO2_2
+```
+
+
+
+Quellen: 
+Die Methodik ist aus:
+Hyndman, R.J., & Athanasopoulos, G. (2021) Forecasting: principles and practice, 3rd edition, OTexts: Melbourne, Australia. OTexts.com/fpp3. Accessed on 12.11.2021.https://otexts.com/fpp3/
+
+Links zu R und Rstudio, wie immer mit ganz herzlichem Dank an einen Haufen Leute hinter den jeweiligen Packages:
+
+Quelle zu R:
+ R Core Team (2021). R: A language and environment for statistical computing. R Foundation for Statistical
+  Computing, Vienna, Austria. URL https://www.R-project.org/.
+  
+Quelle zu RStudio: 
+RStudio Team (2020). RStudio: Integrated Development for R. RStudio, PBC, Boston, MA URL http://www.rstudio.com/.
+
+Die Temperaturdaten sind von der NASA:  https://climate.nasa.gov/vital-signs/global-temperature/
+
+Link zu den CO2-Daten: https://scrippsco2.ucsd.edu/data/atmospheric_co2/icecore_merged_products.html
+
+C. D. Keeling, S. C. Piper, R. B. Bacastow, M. Wahlen, T. P. Whorf, M. Heimann, and H. A. Meijer, Atmospheric CO2 and 13CO2 exchange with the terrestrial biosphere and oceans from 1978 to 2000: observations and carbon cycle implications, pages 83-113, in "A History of Atmospheric CO2 and its effects on Plants, Animals, and Ecosystems", editors, Ehleringer, J.R., T. E. Cerling, M. D. Dearing, Springer Verlag, New York, 2005.
+Citation for Ice-core Data
+
+ORIGINAL REFERENCES:
+Ice Core results:
+Law Dome CO2 and CH4 records of the last 1000 years first
+published in Etheridge et al., 1996 and 1998.  Newer results
+which fill in gaps, extend record to 2000 BP and include N2O,
+were published and explained in detail in MacFarling Meure
+et al. 2006 and MacFarling Meure 2004. Some new CH4 results
+were also published in Ferretti et al. 2005.
+
+Etheridge, D.M., L.P. Steele, R.L. Langenfelds, R.J. Francey,
+J.-M. Barnola, and V.I. Morgan.  1996.
+Natural and anthropogenic changes in atmospheric CO2 over the
+last 1000 years from air in Antarctic ice and firn.
+Journal of Geophysical Research, 101, 4115-4128.
+
+Etheridge, D.M., L.P. Steele, R.J. Francey, and R.L. Langenfelds. 1998.
+Atmospheric methane between 1000 A.D. and present: evidence
+of anthropogenic emissions and climatic variability.
+Journal of Geophysical Research, 103, 15979-15996.
+
+MacFarling Meure, C., D. Etheridge, C. Trudinger, P. Steele,
+R. Langenfelds, T. van Ommen, A. Smith, and J. Elkins.  2006.
+The Law Dome CO2, CH4 and N2O Ice Core Records Extended to 2000 years BP.
+Geophysical Research Letters, Vol. 33, No. 14, L14810 10.1029/2006GL026152.
+
+MacFarling Meure, C. 2004.
+The natural and anthropogenic variations of carbon dioxide, methane
+and nitrous oxide during the Holocene from ice core analysis.
+PhD thesis, University of Melbourne.
+
+Ferretti, D.F., J.B. Miller, J.W.C. White, D.M. Etheridge, K.R. Lassey,
+D.C. Lowe, C.M. MacFarling Meure, M.F. Dreier, C.M. Trudinger, and
+T.D. van Ommen.  2005.
+Unexpected Changes to the Global Methane Budget over the Last 2,000 Years.
+Science, 309 (5741): 1714-1717.
+  
+
+
+
+Firn air results:
+Etheridge, D.M., L.P. Steele, R.J. Francey, and R.L. Langenfelds. 1998.
+Atmospheric methane between 1000 A.D. and present: evidence
+of anthropogenic emissions and climatic variability.
+Journal of Geophysical Research, 103, 15979-15996.
+
+Trudinger, C.M., D.M. Etheridge, P.J. Rayner, I.G. Enting, G.A. Sturrock,
+R.L. Langenfelds, and A.M. Smith. 2002.
+Reconstructing atmospheric histories from measurements of air in firn.
+Journal of Geophysical Research, 107, doi:10.1029/2002JD002545.
+
+Sturrock, G.A., D.M. Etheridge, C.M. Trudinger, and P.J. Fraser. 2002.
+Atmospheric histories of halocarbons from analysis of Antarctic firn air:
+Major Montreal Protocol species.
+Journal of Geophysical Research, 107, doi:10.1029/2002JD002548.
+
+
+
+Cape Grim Record:
+The Cape Grim record is composed of deseasonalised air archive and flask
+records for CH4 and N2O and deseasonalised flask and in situ records for CO2.
+
+Langenfelds, R.L., P.J. Fraser, R.J. Francey, L.P. Steele, L.W. Porter,
+and C.E. Allison. 1996.
+The Cape Grim air archive: The first seventeen years, 1978-1995,
+In: Baseline Atmospheric Program (Australia) 1994-1995,
+edited by Francey, R.J., A.L. Dick, and N. Derek, p53-70,
+Bureau of Meteorology and CSIRO Division of Atmospheric Research,
+Melbourne, Australia.
+
+Langenfelds, R.L., L.P. Steele, M.V. Van der Schoot, L.N. Cooper,
+D.A. Spencer, and P.B. Krummel. 2004.
+Atmospheric methane, carbon dioxide, hydrogen, carbon monoxide and nitrous
+oxide from Cape Grim flask air samples analysed by gas chromatography.
+In: Baseline Atmospheric Program Australia. 2001-2002 ed. J.M. Cainey,
+N. Derek, and P.B. Krummel (editors). Melbourne: Bureau of Meteorology
+and CSIRO Atmospheric Research. p. 46-47.
+
+Langenfelds, R.L., P.J. Fraser, L.P. Steele, and L.W. Porter. 2004.
+Archiving of Cape Grim Air. In: Baseline Atmospheric Program Australia.
+2001-2002 ed. J.M. Cainey, N. Derek, and P.B. Krummel (editors).
+Melbourne: Bureau of Meteorology and CSIRO Atmospheric Research. p. 48.
