@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-Zuerst müssen die Daten in R: 
+Zuerst müssen die Daten in R geladen werden: 
 
 ```{r}
 Temp <- read.table("Global Temperature.txt")
